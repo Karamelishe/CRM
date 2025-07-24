@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}CRM Система{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    {% block navbar %}
+    <nav class="navbar">
+        <div class="container">
+            <a href="/" class="logo">CRM Система</a>
+            <ul class="nav-links">
+                <li><a href="/dashboard">Дашборд</a></li>
+                <li><a href="/clients">Клиенты</a></li>
+                <li><a href="/appointments">Записи</a></li>
+                <li><a href="/services">Услуги</a></li>
+            </ul>
+            <div class="user-menu">
+                <button class="btn-logout" onclick="logout()">Выйти</button>
+            </div>
+        </div>
+    </nav>
+    {% endblock %}
+
+    {% block content %}{% endblock %}
+
+    <script src="/static/app.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

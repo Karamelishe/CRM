@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Записи - CRM Система{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+        <h1 style="color: white;">Записи</h1>
+        <button class="btn btn-primary" onclick="openModal('appointmentModal')">
+            Создать запись
+        </button>
+    </div>
+    
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Клиент</th>
+                    <th>Услуга</th>
+                    <th>Дата и время</th>
+                    <th>Статус</th>
+                    <th>Заметки</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody id="appointmentsTable">
+                <!-- Данные загружаются через JS -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Модальное окно для добавления/редактирования записи -->
+<div id="appointmentModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal('appointmentModal')">&times;</span>
+        <h2 id="appointmentModalTitle">Создать запись</h2>
+        
+        <form id="appointmentForm">
+            <input type="hidden" id="appointmentId">
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="appointmentClient">Клиент:</label>
+                    <select id="appointmentClient" class="form-control" required>
+                        <option value="">Выберите клиента</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="appointmentService">Услуга:</label>
+                    <select id="appointmentService" class="form-control" required>
+                        <option value="">Выберите услугу</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="appointmentDate">Дата:</label>
+                    <input type="date" id="appointmentDate" class="form-control" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="appointmentTime">Время:</label>
+                    <input type="time" id="appointmentTime" class="form-control" required>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="appointmentStatus">Статус:</label>
+                <select id="appointmentStatus" class="form-control">
+                    <option value="scheduled">Запланирована</option>
+                    <option value="confirmed">Подтверждена</option>
+                    <option value="completed">Выполнена</option>
+                    <option value="cancelled">Отменена</option>
+                    <option value="no_show">Не явился</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="appointmentNotes">Заметки:</label>
+                <textarea id="appointmentNotes" class="form-control" rows="3"></textarea>
+            </div>
+            
+            <div style="display: flex; gap: 15px; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('appointmentModal')">
+                    Отмена
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    Сохранить
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let appointments = [];
+let clients = [];
+let services = [];
+
+async function loadAppointments() {
+    try {
+        appointments = await api.get('/appointments');
+        renderAppointmentsTable();
+    } catch (error) {
+        showAlert('Ошибка загрузки записей: ' + error.message, 'error');
+    }
+}
+
+async function loadClients() {
+    try {
+        clients = await api.get('/clients');
+        populateClientSelect();
+    } catch (error) {
+        console.error('Ошибка загрузки клиентов:', error);
+    }
+}
+
+async function loadServices() {
+    try {
+        services = await api.get('/services');
+        populateServiceSelect();
+    } catch (error) {
+        console.error('Ошибка загрузки услуг:', error);
+    }
+}
+
+function populateClientSelect() {
+    const select = document.getElementById('appointmentClient');
+    select.innerHTML = '<option value="">Выберите клиента</option>';
+    
+    clients.forEach(client => {
+        const option = document.createElement('option');
+        option.value = client.id;
+        option.textContent = `${client.full_name} (${formatPhone(client.phone)})`;
+        select.appendChild(option);
+    });
+}
+
+function populateServiceSelect() {
+    const select = document.getElementById('appointmentService');
+    select.innerHTML = '<option value="">Выберите услугу</option>';
+    
+    services.forEach(service => {
+        const option = document.createElement('option');
+        option.value = service.id;
+        option.textContent = `${service.name} (${service.duration_minutes} мин)`;
+        select.appendChild(option);
+    });
+}
+
+function renderAppointmentsTable() {
+    const tbody = document.getElementById('appointmentsTable');
+    tbody.innerHTML = '';
+    
+    appointments.forEach(appointment => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${appointment.client.full_name}</td>
+            <td>${appointment.service.name}</td>
+            <td>${formatDate(appointment.datetime)}</td>
+            <td>
+                <span class="badge badge-${getStatusColor(appointment.status)}">
+                    ${getStatusText(appointment.status)}
+                </span>
+            </td>
+            <td>${appointment.notes || '-'}</td>
+            <td>
+                <button class="btn btn-sm btn-secondary mr-2" onclick="editAppointment(${appointment.id})">
+                    Редактировать
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="deleteAppointment(${appointment.id})">
+                    Удалить
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function editAppointment(appointmentId) {
+    const appointment = appointments.find(a => a.id === appointmentId);
+    if (!appointment) return;
+    
+    const datetime = new Date(appointment.datetime);
+    
+    document.getElementById('appointmentModalTitle').textContent = 'Редактировать запись';
+    document.getElementById('appointmentId').value = appointment.id;
+    document.getElementById('appointmentClient').value = appointment.client_id;
+    document.getElementById('appointmentService').value = appointment.service_id;
+    document.getElementById('appointmentDate').value = datetime.toISOString().split('T')[0];
+    document.getElementById('appointmentTime').value = datetime.toTimeString().substr(0, 5);
+    document.getElementById('appointmentStatus').value = appointment.status;
+    document.getElementById('appointmentNotes').value = appointment.notes || '';
+    
+    openModal('appointmentModal');
+}
+
+async function deleteAppointment(appointmentId) {
+    if (!confirm('Вы уверены, что хотите удалить эту запись?')) return;
+    
+    try {
+        await api.delete(`/appointments/${appointmentId}`);
+        showAlert('Запись удалена', 'success');
+        loadAppointments();
+    } catch (error) {
+        showAlert('Ошибка удаления записи: ' + error.message, 'error');
+    }
+}
+
+document.getElementById('appointmentForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const appointmentId = document.getElementById('appointmentId').value;
+    const date = document.getElementById('appointmentDate').value;
+    const time = document.getElementById('appointmentTime').value;
+    const datetime = new Date(`${date}T${time}`);
+    
+    const appointmentData = {
+        client_id: parseInt(document.getElementById('appointmentClient').value),
+        service_id: parseInt(document.getElementById('appointmentService').value),
+        datetime: datetime.toISOString(),
+        status: document.getElementById('appointmentStatus').value,
+        notes: document.getElementById('appointmentNotes').value || null
+    };
+    
+    try {
+        if (appointmentId) {
+            // Обновление
+            delete appointmentData.client_id;
+            delete appointmentData.service_id;
+            await api.put(`/appointments/${appointmentId}`, appointmentData);
+            showAlert('Запись обновлена', 'success');
+        } else {
+            // Создание
+            await api.post('/appointments', appointmentData);
+            showAlert('Запись создана', 'success');
+        }
+        
+        closeModal('appointmentModal');
+        document.getElementById('appointmentForm').reset();
+        document.getElementById('appointmentId').value = '';
+        document.getElementById('appointmentModalTitle').textContent = 'Создать запись';
+        loadAppointments();
+    } catch (error) {
+        showAlert('Ошибка сохранения записи: ' + error.message, 'error');
+    }
+});
+
+// Инициализация данных при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.location.pathname === '/appointments') {
+        loadAppointments();
+        loadClients();
+        loadServices();
+    }
+});
+</script>
+
+<style>
+.badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.badge-primary { background: #667eea; color: white; }
+.badge-success { background: #28a745; color: white; }
+.badge-secondary { background: #6c757d; color: white; }
+.badge-danger { background: #dc3545; color: white; }
+.badge-warning { background: #ffc107; color: #212529; }
+</style>
+{% endblock %}
