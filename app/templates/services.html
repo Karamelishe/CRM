@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}Услуги - CRM Система{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+        <h1 style="color: white;">Услуги</h1>
+        <button class="btn btn-primary" onclick="openModal('serviceModal')">
+            Добавить услугу
+        </button>
+    </div>
+    
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Название</th>
+                    <th>Описание</th>
+                    <th>Длительность (мин)</th>
+                    <th>Цена (руб.)</th>
+                    <th>Статус</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody id="servicesTable">
+                <!-- Данные загружаются через JS -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Модальное окно для добавления/редактирования услуги -->
+<div id="serviceModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal('serviceModal')">&times;</span>
+        <h2 id="serviceModalTitle">Добавить услугу</h2>
+        
+        <form id="serviceForm">
+            <input type="hidden" id="serviceId">
+            
+            <div class="form-group">
+                <label class="form-label" for="serviceName">Название:</label>
+                <input type="text" id="serviceName" class="form-control" required>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="serviceDescription">Описание:</label>
+                <textarea id="serviceDescription" class="form-control" rows="3"></textarea>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="serviceDuration">Длительность (минуты):</label>
+                    <input type="number" id="serviceDuration" class="form-control" min="1" value="60" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="servicePrice">Цена (рублей):</label>
+                    <input type="number" id="servicePrice" class="form-control" min="0" step="0.01">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="serviceActive">
+                    <input type="checkbox" id="serviceActive" checked> Активна
+                </label>
+            </div>
+            
+            <div style="display: flex; gap: 15px; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('serviceModal')">
+                    Отмена
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    Сохранить
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let services = [];
+
+async function loadServices() {
+    try {
+        // Получаем все услуги, включая неактивные (для админов)
+        const response = await fetch('/api/services', {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+        
+        if (response.ok) {
+            services = await response.json();
+        } else {
+            // Если нет доступа к неактивным услугам, загружаем только активные
+            services = await api.get('/services');
+        }
+        
+        renderServicesTable();
+    } catch (error) {
+        showAlert('Ошибка загрузки услуг: ' + error.message, 'error');
+    }
+}
+
+function renderServicesTable() {
+    const tbody = document.getElementById('servicesTable');
+    tbody.innerHTML = '';
+    
+    services.forEach(service => {
+        const row = document.createElement('tr');
+        const price = service.price ? (service.price / 100).toFixed(2) : '-';
+        
+        row.innerHTML = `
+            <td>${service.name}</td>
+            <td>${service.description || '-'}</td>
+            <td>${service.duration_minutes}</td>
+            <td>${price}</td>
+            <td>
+                <span class="badge badge-${service.is_active ? 'success' : 'secondary'}">
+                    ${service.is_active ? 'Активна' : 'Неактивна'}
+                </span>
+            </td>
+            <td>
+                <button class="btn btn-sm btn-secondary mr-2" onclick="editService(${service.id})">
+                    Редактировать
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function editService(serviceId) {
+    const service = services.find(s => s.id === serviceId);
+    if (!service) return;
+    
+    document.getElementById('serviceModalTitle').textContent = 'Редактировать услугу';
+    document.getElementById('serviceId').value = service.id;
+    document.getElementById('serviceName').value = service.name;
+    document.getElementById('serviceDescription').value = service.description || '';
+    document.getElementById('serviceDuration').value = service.duration_minutes;
+    document.getElementById('servicePrice').value = service.price ? (service.price / 100) : '';
+    document.getElementById('serviceActive').checked = service.is_active;
+    
+    openModal('serviceModal');
+}
+
+document.getElementById('serviceForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const serviceId = document.getElementById('serviceId').value;
+    const price = document.getElementById('servicePrice').value;
+    
+    const serviceData = {
+        name: document.getElementById('serviceName').value,
+        description: document.getElementById('serviceDescription').value || null,
+        duration_minutes: parseInt(document.getElementById('serviceDuration').value),
+        price: price ? Math.round(parseFloat(price) * 100) : null,
+        is_active: document.getElementById('serviceActive').checked
+    };
+    
+    try {
+        if (serviceId) {
+            // Обновление
+            await api.put(`/services/${serviceId}`, serviceData);
+            showAlert('Услуга обновлена', 'success');
+        } else {
+            // Создание
+            await api.post('/services', serviceData);
+            showAlert('Услуга добавлена', 'success');
+        }
+        
+        closeModal('serviceModal');
+        document.getElementById('serviceForm').reset();
+        document.getElementById('serviceId').value = '';
+        document.getElementById('serviceModalTitle').textContent = 'Добавить услугу';
+        document.getElementById('serviceDuration').value = 60;
+        document.getElementById('serviceActive').checked = true;
+        loadServices();
+    } catch (error) {
+        showAlert('Ошибка сохранения услуги: ' + error.message, 'error');
+    }
+});
+
+// Инициализация данных при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.location.pathname === '/services') {
+        loadServices();
+    }
+});
+</script>
+
+<style>
+.badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.badge-success { background: #28a745; color: white; }
+.badge-secondary { background: #6c757d; color: white; }
+
+.form-label input[type="checkbox"] {
+    margin-right: 8px;
+}
+</style>
+{% endblock %}

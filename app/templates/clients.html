@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Клиенты - CRM Система{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+        <h1 style="color: white;">Клиенты</h1>
+        <button class="btn btn-primary" onclick="openModal('clientModal')">
+            Добавить клиента
+        </button>
+    </div>
+    
+    <div class="card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Имя</th>
+                    <th>Телефон</th>
+                    <th>Email</th>
+                    <th>Telegram</th>
+                    <th>Дата создания</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody id="clientsTable">
+                <!-- Данные загружаются через JS -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Модальное окно для добавления/редактирования клиента -->
+<div id="clientModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal('clientModal')">&times;</span>
+        <h2 id="clientModalTitle">Добавить клиента</h2>
+        
+        <form id="clientForm">
+            <input type="hidden" id="clientId">
+            
+            <div class="form-group">
+                <label class="form-label" for="clientName">Полное имя:</label>
+                <input type="text" id="clientName" class="form-control" required>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="clientPhone">Телефон:</label>
+                    <input type="tel" id="clientPhone" class="form-control" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="clientEmail">Email:</label>
+                    <input type="email" id="clientEmail" class="form-control">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="clientTelegram">Telegram Username:</label>
+                <input type="text" id="clientTelegram" class="form-control" placeholder="@username">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="clientNotes">Заметки:</label>
+                <textarea id="clientNotes" class="form-control" rows="3"></textarea>
+            </div>
+            
+            <div style="display: flex; gap: 15px; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('clientModal')">
+                    Отмена
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    Сохранить
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let clients = [];
+
+async function loadClients() {
+    try {
+        clients = await api.get('/clients');
+        renderClientsTable();
+    } catch (error) {
+        showAlert('Ошибка загрузки клиентов: ' + error.message, 'error');
+    }
+}
+
+function renderClientsTable() {
+    const tbody = document.getElementById('clientsTable');
+    tbody.innerHTML = '';
+    
+    clients.forEach(client => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${client.full_name}</td>
+            <td>${formatPhone(client.phone)}</td>
+            <td>${client.email || '-'}</td>
+            <td>${client.telegram_username || '-'}</td>
+            <td>${formatDate(client.created_at)}</td>
+            <td>
+                <button class="btn btn-sm btn-secondary mr-2" onclick="editClient(${client.id})">
+                    Редактировать
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="deleteClient(${client.id})">
+                    Удалить
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function editClient(clientId) {
+    const client = clients.find(c => c.id === clientId);
+    if (!client) return;
+    
+    document.getElementById('clientModalTitle').textContent = 'Редактировать клиента';
+    document.getElementById('clientId').value = client.id;
+    document.getElementById('clientName').value = client.full_name;
+    document.getElementById('clientPhone').value = client.phone;
+    document.getElementById('clientEmail').value = client.email || '';
+    document.getElementById('clientTelegram').value = client.telegram_username || '';
+    document.getElementById('clientNotes').value = client.notes || '';
+    
+    openModal('clientModal');
+}
+
+async function deleteClient(clientId) {
+    if (!confirm('Вы уверены, что хотите удалить этого клиента?')) return;
+    
+    try {
+        await api.delete(`/clients/${clientId}`);
+        showAlert('Клиент удален', 'success');
+        loadClients();
+    } catch (error) {
+        showAlert('Ошибка удаления клиента: ' + error.message, 'error');
+    }
+}
+
+document.getElementById('clientForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const clientId = document.getElementById('clientId').value;
+    const clientData = {
+        full_name: document.getElementById('clientName').value,
+        phone: document.getElementById('clientPhone').value,
+        email: document.getElementById('clientEmail').value || null,
+        telegram_username: document.getElementById('clientTelegram').value || null,
+        notes: document.getElementById('clientNotes').value || null
+    };
+    
+    try {
+        if (clientId) {
+            // Обновление
+            await api.put(`/clients/${clientId}`, clientData);
+            showAlert('Клиент обновлен', 'success');
+        } else {
+            // Создание
+            await api.post('/clients', clientData);
+            showAlert('Клиент добавлен', 'success');
+        }
+        
+        closeModal('clientModal');
+        document.getElementById('clientForm').reset();
+        document.getElementById('clientId').value = '';
+        document.getElementById('clientModalTitle').textContent = 'Добавить клиента';
+        loadClients();
+    } catch (error) {
+        showAlert('Ошибка сохранения клиента: ' + error.message, 'error');
+    }
+});
+
+// Сброс формы при закрытии модального окна
+function closeClientModal() {
+    closeModal('clientModal');
+    document.getElementById('clientForm').reset();
+    document.getElementById('clientId').value = '';
+    document.getElementById('clientModalTitle').textContent = 'Добавить клиента';
+}
+</script>
+{% endblock %}
