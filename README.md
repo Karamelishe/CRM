@@ -1,204 +1,89 @@
-# CRM Система для малого бизнеса
+# E-commerce Cyber Range Lab
 
-Современная CRM система с веб-интерфейсом и интеграцией Telegram бота для управления клиентами, записями и автоматическими напоминаниями.
+Лабораторный интернет-магазин для отработки поиска бизнес-логических уязвимостей через UI и HTTP-трафик. Проект предназначен **только для обучения** и запускается в изолированной среде.
 
-## 🚀 Возможности
+## 🎯 Что внутри
+- Магазин с каталогом, корзиной, оформлением заказа, купонами и административной панелью.
+- Современный UI (vanilla JS + кастомный стиль) с акцентом на работу через прокси (Burp, mitmproxy).
+- Три встроенных бизнес-логических сценария с фиксированными флагами (CTF-style).
+- LAB-режим по умолчанию: нет внешних интеграций и продакшн-режимов.
 
-- **Управление клиентами**: Добавление, редактирование и удаление клиентов
-- **Система записей**: Планирование и управление встречами/записями
-- **Управление услугами**: Каталог предлагаемых услуг с ценами
-- **Telegram бот**: Запись через бота и автоматические напоминания
-- **Дашборд**: Статистика и аналитика
-- **Аутентификация**: Безопасная система входа с JWT токенами
-- **Адаптивный дизайн**: Современный веб-интерфейс
-
-## 📋 Технологии
-
-- **Backend**: FastAPI, SQLAlchemy, PostgreSQL
-- **Frontend**: HTML, CSS, JavaScript (Vanilla)
-- **Telegram**: python-telegram-bot
-- **База данных**: PostgreSQL
-- **Контейнеризация**: Docker, Docker Compose
-
-## 🛠 Установка и запуск
-
-### Через Docker (рекомендуется)
-
-1. **Клонируйте репозиторий:**
+## 🚀 Быстрый старт (Docker)
 ```bash
-git clone <repository-url>
-cd crm-system
-```
-
-2. **Создайте файл .env:**
-```bash
-cp .env.example .env
-```
-
-3. **Настройте переменные окружения в .env:**
-```env
-DATABASE_URL=postgresql://crm_user:crm_password@postgres:5432/crm_db
-TELEGRAM_BOT_TOKEN=your_bot_token_here
-SECRET_KEY=your_secret_key_here_generate_with_openssl_rand_hex_32
-DEBUG=False
-TIMEZONE=Europe/Moscow
-```
-
-4. **Запустите систему:**
-```bash
-docker-compose up -d
-```
-
-5. **Инициализируйте базу данных:**
-```bash
+docker-compose up -d --build
 docker-compose exec app python init_db.py
 ```
 
-### Ручная установка
+Затем откройте `http://localhost:8000`.
 
-1. **Установите зависимости:**
+### Учетные данные
+- Администратор: `admin@shop.local` / `admin123`
+- Покупатели: `alice@shop.local`, `bob@shop.local` (пароль `customer123`)
+
+## 🧩 Лабораторные сценарии и флаги
+Все флаги статичны и имеют вид `FLAG-SCNXX-ECOMMERCE`.
+
+### SCN-01 — Broken Object Ownership
+- **Суть:** деталь заказа должна быть доступна только владельцу, но проверка владельца пропущена.
+- **Подсказка:** просмотрите `GET /api/orders/{id}` с токеном другого пользователя.
+- **Флаг:** `FLAG-SCN01-ECOMMERCE` находится в чужом заказе (seed-данные содержат заказ Алисы).
+
+### SCN-02 — Order State Machine Violation
+- **Суть:** переходы статусов заказа должны быть последовательными (`created → paid → shipped → delivered → refunded`), но проверка основана на данных клиента.
+- **Подсказка:** в админ-панели отправьте `from_status -> to_status`, где `from_status` можно подделать. Перейдите к `refunded`, минуя реальные шаги.
+- **Флаг:** `FLAG-SCN02-ECOMMERCE` возвращается в теле ответа заказа при успешном нарушении.
+
+### SCN-03 — Coupon / Discount Logic Abuse
+- **Суть:** купон `ONETIME50` должен быть одноразовым на пользователя и минимальную сумму, но привязка идет к `billing_email`, который передает клиент.
+- **Подсказка:** оформите несколько заказов, меняя `billing_email` в запросе, чтобы обойти ограничение.
+- **Флаг:** `FLAG-SCN03-ECOMMERCE` появится в поле `lab_flag` заказа после повторного использования купона тем же пользователем.
+
+## 🖥️ Интерфейс
+- `/` — каталог товаров
+- `/cart` — корзина с применением купона и указанием `billing_email`
+- `/account` — заказы пользователя (виден флаг при триггере)
+- `/admin` — административная панель (список заказов и изменение статусов)
+- `/login`, `/register` — аутентификация
+
+## 📦 API (основные точки)
+- `POST /api/auth/register`, `POST /api/auth/login-json`
+- `GET /api/products/` — каталог
+- `GET /api/cart/`, `POST /api/cart/add`, `POST /api/cart/apply-coupon`
+- `POST /api/orders/` — оформление заказа (принимает `coupon_code`, `billing_email`)
+- `GET /api/orders/{id}` — уязвимый просмотр заказа (SCN-01)
+- `PATCH /api/orders/{id}/status` — обновление статуса на основе пользовательского `from_status` (SCN-02)
+
+## 🛠 Ручной запуск (без Docker)
 ```bash
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-2. **Настройте PostgreSQL:**
-```bash
-# Создайте базу данных и пользователя
-sudo -u postgres psql
-CREATE DATABASE crm_db;
-CREATE USER crm_user WITH PASSWORD 'crm_password';
-GRANT ALL PRIVILEGES ON DATABASE crm_db TO crm_user;
-```
-
-3. **Настройте .env файл и запустите:**
-```bash
+export DATABASE_URL=postgresql://crm_user:crm_password@localhost:5432/crm_db
+export SECRET_KEY=$(openssl rand -hex 32)
 python init_db.py
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## 🤖 Настройка Telegram бота
+## 🧪 Что проверить
+- Работа UI + API через прокси (Burp).
+- Решаемость всех трех сценариев через изменение последовательности запросов/параметров.
+- Отображение флагов в ответах/интерфейсе.
 
-1. **Создайте бота через @BotFather в Telegram**
-2. **Получите токен и добавьте его в .env файл**
-3. **Перезапустите приложение**
-
-### Команды бота:
-- `/start` - Начать работу с ботом
-- Интерактивные кнопки для записи и просмотра записей
-
-## 📱 Использование
-
-### Веб-интерфейс
-
-1. **Откройте браузер и перейдите на** `http://localhost:8000`
-2. **Войдите в систему:**
-   - Email: `admin@example.com`
-   - Пароль: `admin123`
-
-### Основные функции:
-
-- **Дашборд**: Просмотр статистики и последних записей
-- **Клиенты**: Управление базой клиентов
-- **Записи**: Планирование и отслеживание встреч
-- **Услуги**: Управление каталогом услуг
-
-### API
-
-Документация API доступна по адресу: `http://localhost:8000/docs`
-
-## 🔧 Конфигурация
-
-### Переменные окружения:
-
-| Переменная | Описание | По умолчанию |
-|------------|----------|--------------|
-| `DATABASE_URL` | URL подключения к PostgreSQL | - |
-| `TELEGRAM_BOT_TOKEN` | Токен Telegram бота | - |
-| `SECRET_KEY` | Секретный ключ для JWT | - |
-| `DEBUG` | Режим отладки | `True` |
-| `TIMEZONE` | Часовой пояс | `Europe/Moscow` |
-| `REMINDER_HOURS_BEFORE` | За сколько часов напоминать | `24` |
-
-### Генерация SECRET_KEY:
-```bash
-openssl rand -hex 32
+## 🗂 Структура
+```
+app/
+├── api/         # Auth, products, cart, orders
+├── core/        # Config, DB, auth
+├── crud/        # Бизнес-логика и лабораторные сценарии
+├── models/      # SQLAlchemy модели (товары, заказы, купоны)
+├── schemas/     # Pydantic-схемы
+├── static/      # JS + стили фронтенда
+└── templates/   # HTML страницы магазина
 ```
 
-## 📊 Структура проекта
-
-```
-crm-system/
-├── app/
-│   ├── api/              # API роутеры
-│   ├── core/             # Конфигурация и база данных
-│   ├── crud/             # CRUD операции
-│   ├── models/           # Модели SQLAlchemy
-│   ├── schemas/          # Pydantic схемы
-│   ├── services/         # Бизнес-логика (Telegram, напоминания)
-│   ├── static/           # Статические файлы (CSS, JS)
-│   ├── templates/        # HTML шаблоны
-│   └── main.py          # Главный файл приложения
-├── docker-compose.yml    # Docker Compose конфигурация
-├── Dockerfile           # Docker образ
-├── requirements.txt     # Python зависимости
-├── init_db.py          # Скрипт инициализации БД
-└── README.md           # Документация
-```
-
-## 🔐 Безопасность
-
-- JWT токены для аутентификации
-- Хеширование паролей с bcrypt
-- Валидация данных с Pydantic
-- Разделение прав доступа (обычные пользователи/администраторы)
-
-## 📝 API Endpoints
-
-### Аутентификация
-- `POST /api/auth/register` - Регистрация
-- `POST /api/auth/login` - Вход
-- `POST /api/auth/login-json` - Вход через JSON
-
-### Клиенты
-- `GET /api/clients` - Список клиентов
-- `POST /api/clients` - Создать клиента
-- `GET /api/clients/{id}` - Получить клиента
-- `PUT /api/clients/{id}` - Обновить клиента
-- `DELETE /api/clients/{id}` - Удалить клиента
-
-### Записи
-- `GET /api/appointments` - Список записей
-- `POST /api/appointments` - Создать запись
-- `GET /api/appointments/{id}` - Получить запись
-- `PUT /api/appointments/{id}` - Обновить запись
-- `DELETE /api/appointments/{id}` - Удалить запись
-
-### Услуги
-- `GET /api/services` - Список услуг
-- `POST /api/services` - Создать услугу (только админ)
-- `PUT /api/services/{id}` - Обновить услугу (только админ)
-
-## 🚀 Развертывание в продакшене
-
-1. **Используйте внешнюю базу данных PostgreSQL**
-2. **Настройте HTTPS с помощью reverse proxy (nginx)**
-3. **Установите DEBUG=False**
-4. **Используйте сильный SECRET_KEY**
-5. **Настройте резервное копирование базы данных**
-
-### Пример nginx конфигурации:
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    
-    location / {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
+## ⚠️ Важно
+- Проект предназначен **исключительно** для лаб/обучения. Не использовать в продакшене.
+- Все флаги статичны и не зависят от пользователя или времени.
+- Внешние интеграции отключены; платежи и уведомления — фиктивные.
 
 ## 🤝 Поддержка
 

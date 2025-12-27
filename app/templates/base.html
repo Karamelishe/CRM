@@ -3,30 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}CRM Система{% endblock %}</title>
+    <title>{% block title %}E-commerce Cyber Range{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    {% block navbar %}
-    <nav class="navbar">
-        <div class="container">
-            <a href="/" class="logo">CRM Система</a>
-            <ul class="nav-links">
-                <li><a href="/dashboard">Дашборд</a></li>
-                <li><a href="/clients">Клиенты</a></li>
-                <li><a href="/appointments">Записи</a></li>
-                <li><a href="/services">Услуги</a></li>
-            </ul>
-            <div class="user-menu">
-                <button class="btn-logout" onclick="logout()">Выйти</button>
+    <div class="shell">
+        <header>
+            <div class="logo">
+                <div class="dot"></div>
+                <div>
+                    <div>E-Com Lab</div>
+                    <div class="muted">Бизнес-логика под прицелом</div>
+                </div>
             </div>
-        </div>
-    </nav>
-    {% endblock %}
-
-    {% block content %}{% endblock %}
-
+            <nav class="nav">
+                <a href="/">Каталог</a>
+                <a href="/cart">Корзина</a>
+                <a href="/account">Мои заказы</a>
+                <a href="/admin">Админ</a>
+                <a href="/login">Вход</a>
+                <button data-logout>Выйти</button>
+            </nav>
+        </header>
+        {% block content %}{% endblock %}
+    </div>
     <script src="/static/app.js"></script>
-    {% block scripts %}{% endblock %}
 </body>
 </html>

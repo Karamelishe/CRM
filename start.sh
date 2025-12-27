@@ -20,7 +20,6 @@ if [ ! -f .env ]; then
     echo "⚠️  Файл .env не найден. Создаю из примера..."
     cp .env.example .env
     echo "✅ Файл .env создан. Пожалуйста, настройте переменные окружения:"
-    echo "   - TELEGRAM_BOT_TOKEN (токен вашего Telegram бота)"
     echo "   - SECRET_KEY (сгенерируйте командой: openssl rand -hex 32)"
     echo ""
     echo "После настройки запустите скрипт снова."

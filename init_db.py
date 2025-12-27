@@ -1,97 +1,124 @@
 #!/usr/bin/env python3
 """
-Скрипт инициализации базы данных
-Создает таблицы и добавляет базовые данные
+Инициализация лабораторного магазина:
+- Создает таблицы
+- Добавляет пользователей, товары, купоны и предсозданные заказы с флагами
 """
 
-import asyncio
 from sqlalchemy.orm import Session
 from app.core.database import engine, Base
-from app.core.config import settings
 from app.crud import crud
 from app.schemas import schemas
+from app.models import models
 
 
 def init_database():
-    """Инициализация базы данных"""
     print("Создание таблиц...")
     Base.metadata.create_all(bind=engine)
-    print("Таблицы созданы!")
+    print("Таблицы созданы.")
     
-    # Создаем сессию
     db = Session(bind=engine)
-    
     try:
-        # Проверяем, есть ли уже пользователи
-        existing_user = crud.get_user_by_email(db, "admin@example.com")
-        if existing_user:
-            print("База данных уже инициализирована!")
+        if crud.get_user_by_email(db, "admin@shop.local"):
+            print("База уже инициализирована.")
             return
         
-        # Создаем администратора
-        print("Создание пользователя-администратора...")
-        admin_user = crud.create_user(db, schemas.UserCreate(
-            email="admin@example.com",
+        # Пользователи
+        admin = crud.create_user(db, schemas.UserCreate(
+            email="admin@shop.local",
             password="admin123",
-            full_name="Администратор"
+            full_name="Лабораторный админ"
+        ))
+        admin.is_admin = True
+        
+        alice = crud.create_user(db, schemas.UserCreate(
+            email="alice@shop.local",
+            password="customer123",
+            full_name="Алиса"
         ))
         
-        # Устанавливаем права администратора
-        admin_user.is_admin = True
+        bob = crud.create_user(db, schemas.UserCreate(
+            email="bob@shop.local",
+            password="customer123",
+            full_name="Боб"
+        ))
         db.commit()
         
-        print(f"Администратор создан: {admin_user.email}")
+        print("Созданы пользователи: admin@shop.local / alice@shop.local / bob@shop.local (пароль customer123 у клиентов).")
         
-        # Создаем базовые услуги
-        print("Создание базовых услуг...")
-        services_data = [
-            {
-                "name": "Консультация",
-                "description": "Первичная консультация",
-                "duration_minutes": 60,
-                "price": 200000  # 2000 рублей в копейках
-            },
-            {
-                "name": "Стрижка",
-                "description": "Мужская/женская стрижка",
-                "duration_minutes": 45,
-                "price": 150000  # 1500 рублей
-            },
-            {
-                "name": "Массаж",
-                "description": "Релаксирующий массаж",
-                "duration_minutes": 90,
-                "price": 350000  # 3500 рублей
-            }
+        # Товары
+        products = [
+            schemas.ProductCreate(
+                title="Aurora Headphones",
+                description="Беспроводные наушники с шумоподавлением и 40ч работы.",
+                price=129990,
+                stock=15,
+                image="https://images.unsplash.com/photo-1518449951450-1a1c1c5dc0a0?auto=format&fit=crop&w=900&q=60"
+            ),
+            schemas.ProductCreate(
+                title="Neon Sneakers",
+                description="Ультралегкие кроссовки для городских приключений.",
+                price=89990,
+                stock=25,
+                image="https://images.unsplash.com/photo-1549298916-b41d501d3772?auto=format&fit=crop&w=900&q=60"
+            ),
+            schemas.ProductCreate(
+                title="Skyline Backpack",
+                description="Рюкзак с защитой от RFID и USB-портом для зарядки.",
+                price=74990,
+                stock=30,
+                image="https://images.unsplash.com/photo-1522198436769-9ffcb3cb0e43?auto=format&fit=crop&w=900&q=60"
+            )
         ]
+        created_products = [crud.create_product(db, p) for p in products]
+        print(f"Создано товаров: {len(created_products)}")
         
-        for service_data in services_data:
-            service = crud.create_service(db, schemas.ServiceCreate(**service_data))
-            print(f"Создана услуга: {service.name}")
+        # Купоны
+        coupon = models.Coupon(
+            code="ONETIME50",
+            description="50% скидка, должна сработать один раз на email",
+            discount_type=models.DiscountType.PERCENT,
+            value=50,
+            min_total=50000,
+            max_uses_per_user=1,
+            global_limit=50,
+            active=True
+        )
+        db.add(coupon)
+        db.commit()
+        print("Купон ONETIME50 добавлен.")
         
-        # Создаем тестового клиента
-        print("Создание тестового клиента...")
-        test_client = crud.create_client(db, schemas.ClientCreate(
-            full_name="Иван Петров",
-            phone="79161234567",
-            email="test@example.com",
-            telegram_username="test_user",
-            notes="Тестовый клиент"
-        ), owner_id=admin_user.id)
+        # Предсозданный заказ для SCN-01 (принадлежит Алисе)
+        order = models.Order(
+            user_id=alice.id,
+            status=models.OrderStatus.PAID,
+            total_amount=created_products[0].price,
+            discount_applied=0,
+            coupon_code=None,
+            note="Только владелец должен видеть это примечание.",
+            billing_email="alice@shop.local"
+        )
+        db.add(order)
+        db.commit()
+        db.refresh(order)
+        db.add(models.OrderItem(
+            order_id=order.id,
+            product_id=created_products[0].id,
+            quantity=1,
+            unit_price=created_products[0].price
+        ))
+        # Скрытый флаг доступен в примечании заказа
+        order.lab_flag = "FLAG-SCN01-ECOMMERCE"
+        db.commit()
+        print(f"Добавлен заказ #{order.id} с флагом SCN-01 (принадлежит alice@shop.local).")
         
-        print(f"Создан клиент: {test_client.full_name}")
-        
-        print("\n" + "="*50)
-        print("База данных успешно инициализирована!")
-        print("="*50)
-        print("Данные для входа:")
-        print(f"Email: admin@example.com")
-        print(f"Пароль: admin123")
-        print("="*50)
-        
-    except Exception as e:
-        print(f"Ошибка инициализации: {e}")
-        db.rollback()
+        print("\n== Готово ==")
+        print("Админ: admin@shop.local / admin123")
+        print("Клиенты: alice@shop.local, bob@shop.local (пароль customer123)")
+        print("Флаги:")
+        print(" SCN-01: спрятан в чужом заказе (доступ к /api/orders/{id})")
+        print(" SCN-02: нарушите state machine до REFUNDED")
+        print(" SCN-03: обойдите ограничение купона ONETIME50 через billing_email")
     finally:
         db.close()
 
