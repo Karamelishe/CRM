@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
-from typing import List, Optional
-from datetime import datetime, date, timedelta
+from sqlalchemy import and_
+from typing import Optional, List
+from datetime import datetime
 from passlib.context import CryptContext
 
 from ..models import models
@@ -10,7 +10,7 @@ from ..schemas import schemas
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-# User CRUD
+# User helpers
 def get_password_hash(password):
     return pwd_context.hash(password)
 
@@ -47,197 +47,230 @@ def authenticate_user(db: Session, email: str, password: str):
     return user
 
 
-# Client CRUD
-def get_clients(db: Session, owner_id: int, skip: int = 0, limit: int = 100):
-    return db.query(models.Client).filter(
-        models.Client.owner_id == owner_id
-    ).offset(skip).limit(limit).all()
+# Product CRUD
+def list_products(db: Session, active_only: bool = True):
+    query = db.query(models.Product)
+    if active_only:
+        query = query.filter(models.Product.is_active == True)
+    return query.all()
 
 
-def get_client(db: Session, client_id: int, owner_id: int):
-    return db.query(models.Client).filter(
-        and_(models.Client.id == client_id, models.Client.owner_id == owner_id)
-    ).first()
+def get_product(db: Session, product_id: int):
+    return db.query(models.Product).filter(models.Product.id == product_id).first()
 
 
-def get_client_by_phone(db: Session, phone: str, owner_id: int):
-    return db.query(models.Client).filter(
-        and_(models.Client.phone == phone, models.Client.owner_id == owner_id)
-    ).first()
-
-
-def get_client_by_telegram_id(db: Session, telegram_id: str):
-    return db.query(models.Client).filter(
-        models.Client.telegram_id == telegram_id
-    ).first()
-
-
-def create_client(db: Session, client: schemas.ClientCreate, owner_id: int):
-    db_client = models.Client(**client.model_dump(), owner_id=owner_id)
-    db.add(db_client)
+def create_product(db: Session, product: schemas.ProductCreate):
+    db_product = models.Product(**product.model_dump())
+    db.add(db_product)
     db.commit()
-    db.refresh(db_client)
-    return db_client
+    db.refresh(db_product)
+    return db_product
 
 
-def update_client(db: Session, client_id: int, client: schemas.ClientUpdate, owner_id: int):
-    db_client = get_client(db, client_id, owner_id)
-    if db_client:
-        for key, value in client.model_dump(exclude_unset=True).items():
-            setattr(db_client, key, value)
-        db_client.updated_at = datetime.utcnow()
+def update_product(db: Session, product_id: int, product: schemas.ProductUpdate):
+    db_product = get_product(db, product_id)
+    if db_product:
+        for key, value in product.model_dump(exclude_unset=True).items():
+            setattr(db_product, key, value)
         db.commit()
-        db.refresh(db_client)
-    return db_client
+        db.refresh(db_product)
+    return db_product
 
 
-def delete_client(db: Session, client_id: int, owner_id: int):
-    db_client = get_client(db, client_id, owner_id)
-    if db_client:
-        db.delete(db_client)
+def delete_product(db: Session, product_id: int):
+    db_product = get_product(db, product_id)
+    if db_product:
+        db.delete(db_product)
         db.commit()
-    return db_client
+    return db_product
 
 
-# Service CRUD
-def get_services(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Service).filter(
-        models.Service.is_active == True
-    ).offset(skip).limit(limit).all()
+# Coupon logic
+def get_coupon(db: Session, code: str):
+    return db.query(models.Coupon).filter(models.Coupon.code == code).first()
 
 
-def get_service(db: Session, service_id: int):
-    return db.query(models.Service).filter(models.Service.id == service_id).first()
-
-
-def create_service(db: Session, service: schemas.ServiceCreate):
-    db_service = models.Service(**service.model_dump())
-    db.add(db_service)
-    db.commit()
-    db.refresh(db_service)
-    return db_service
-
-
-def update_service(db: Session, service_id: int, service: schemas.ServiceUpdate):
-    db_service = get_service(db, service_id)
-    if db_service:
-        for key, value in service.model_dump(exclude_unset=True).items():
-            setattr(db_service, key, value)
-        db.commit()
-        db.refresh(db_service)
-    return db_service
-
-
-# Appointment CRUD
-def get_appointments(db: Session, owner_id: int, skip: int = 0, limit: int = 100):
-    return db.query(models.Appointment).filter(
-        models.Appointment.owner_id == owner_id
-    ).offset(skip).limit(limit).all()
-
-
-def get_appointment(db: Session, appointment_id: int, owner_id: int):
-    return db.query(models.Appointment).filter(
-        and_(models.Appointment.id == appointment_id, models.Appointment.owner_id == owner_id)
-    ).first()
-
-
-def get_appointments_by_date(db: Session, owner_id: int, target_date: date):
-    start_of_day = datetime.combine(target_date, datetime.min.time())
-    end_of_day = datetime.combine(target_date, datetime.max.time())
+def apply_coupon_logic(db: Session, coupon_code: str, cart_total: int, billing_email: Optional[str], user_id: int):
+    coupon = get_coupon(db, coupon_code)
+    if not coupon or not coupon.active:
+        return None, 0, "Купон не найден или не активен"
     
-    return db.query(models.Appointment).filter(
-        and_(
-            models.Appointment.owner_id == owner_id,
-            models.Appointment.datetime >= start_of_day,
-            models.Appointment.datetime <= end_of_day
-        )
-    ).all()
-
-
-def get_upcoming_appointments(db: Session, owner_id: int, days_ahead: int = 7):
-    now = datetime.utcnow()
-    future_date = now + timedelta(days=days_ahead)
-    
-    return db.query(models.Appointment).filter(
-        and_(
-            models.Appointment.owner_id == owner_id,
-            models.Appointment.datetime >= now,
-            models.Appointment.datetime <= future_date,
-            models.Appointment.status.in_([models.AppointmentStatus.SCHEDULED, models.AppointmentStatus.CONFIRMED])
-        )
-    ).all()
-
-
-def create_appointment(db: Session, appointment: schemas.AppointmentCreate, owner_id: int):
-    db_appointment = models.Appointment(**appointment.model_dump(), owner_id=owner_id)
-    db.add(db_appointment)
-    db.commit()
-    db.refresh(db_appointment)
-    return db_appointment
-
-
-def update_appointment(db: Session, appointment_id: int, appointment: schemas.AppointmentUpdate, owner_id: int):
-    db_appointment = get_appointment(db, appointment_id, owner_id)
-    if db_appointment:
-        for key, value in appointment.model_dump(exclude_unset=True).items():
-            setattr(db_appointment, key, value)
-        db_appointment.updated_at = datetime.utcnow()
-        db.commit()
-        db.refresh(db_appointment)
-    return db_appointment
-
-
-def delete_appointment(db: Session, appointment_id: int, owner_id: int):
-    db_appointment = get_appointment(db, appointment_id, owner_id)
-    if db_appointment:
-        db.delete(db_appointment)
-        db.commit()
-    return db_appointment
-
-
-# Dashboard stats
-def get_dashboard_stats(db: Session, owner_id: int):
-    total_clients = db.query(models.Client).filter(
-        models.Client.owner_id == owner_id
+    # Используем email, переданный клиентом, а не текущего пользователя (лабораторная уязвимость)
+    usage_email = billing_email
+    user_orders = db.query(models.Order).filter(
+        and_(models.Order.coupon_code == coupon_code, models.Order.billing_email == usage_email)
     ).count()
     
-    total_appointments = db.query(models.Appointment).filter(
-        models.Appointment.owner_id == owner_id
-    ).count()
+    if cart_total < coupon.min_total:
+        return None, 0, "Сумма корзины ниже минимальной для купона"
     
-    today = date.today()
-    today_appointments = len(get_appointments_by_date(db, owner_id, today))
+    if coupon.times_used >= coupon.global_limit:
+        return None, 0, "Купон больше недоступен"
     
-    upcoming_appointments = len(get_upcoming_appointments(db, owner_id, 7))
+    if user_orders >= coupon.max_uses_per_user:
+        # Из-за логики по email можно обойти ограничение, что и является SCN-03
+        return coupon, 0, "Купон уже использован с этим email"
     
-    return schemas.DashboardStats(
-        total_clients=total_clients,
-        total_appointments=total_appointments,
-        today_appointments=today_appointments,
-        upcoming_appointments=upcoming_appointments
+    if coupon.discount_type == models.DiscountType.PERCENT:
+        discount = int(cart_total * (coupon.value / 100))
+    else:
+        discount = int(coupon.value * 100)
+    
+    return coupon, discount, None
+
+
+# Cart CRUD
+def get_cart_items(db: Session, user_id: int):
+    return db.query(models.CartItem).filter(models.CartItem.user_id == user_id).all()
+
+
+def add_to_cart(db: Session, user_id: int, product_id: int, quantity: int = 1):
+    product = get_product(db, product_id)
+    if not product or not product.is_active:
+        return None
+    
+    item = db.query(models.CartItem).filter(
+        and_(models.CartItem.user_id == user_id, models.CartItem.product_id == product_id)
+    ).first()
+    
+    if item:
+        item.quantity += quantity
+    else:
+        item = models.CartItem(user_id=user_id, product_id=product_id, quantity=quantity)
+        db.add(item)
+    
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+def update_cart_item(db: Session, item_id: int, user_id: int, quantity: int):
+    item = db.query(models.CartItem).filter(
+        and_(models.CartItem.id == item_id, models.CartItem.user_id == user_id)
+    ).first()
+    if item:
+        item.quantity = max(1, quantity)
+        db.commit()
+        db.refresh(item)
+    return item
+
+
+def remove_cart_item(db: Session, item_id: int, user_id: int):
+    item = db.query(models.CartItem).filter(
+        and_(models.CartItem.id == item_id, models.CartItem.user_id == user_id)
+    ).first()
+    if item:
+        db.delete(item)
+        db.commit()
+    return item
+
+
+def clear_cart(db: Session, user_id: int):
+    db.query(models.CartItem).filter(models.CartItem.user_id == user_id).delete()
+    db.commit()
+
+
+# Order CRUD
+def create_order_from_cart(
+    db: Session,
+    user_id: int,
+    billing_email: Optional[str],
+    coupon_code: Optional[str],
+    note: Optional[str],
+    discount: int
+):
+    items = get_cart_items(db, user_id)
+    if not items:
+        return None
+    
+    total = sum(item.quantity * item.product.price for item in items)
+    order = models.Order(
+        user_id=user_id,
+        status=models.OrderStatus.CREATED,
+        total_amount=total - discount,
+        discount_applied=discount,
+        coupon_code=coupon_code,
+        billing_email=billing_email,
+        note=note
     )
-
-
-# Appointments needing reminders
-def get_appointments_needing_reminders(db: Session, hours_before: int = 24):
-    reminder_time = datetime.utcnow() + timedelta(hours=hours_before)
+    db.add(order)
+    db.commit()
+    db.refresh(order)
     
-    return db.query(models.Appointment).filter(
-        and_(
-            models.Appointment.datetime <= reminder_time,
-            models.Appointment.datetime > datetime.utcnow(),
-            models.Appointment.reminder_sent == False,
-            models.Appointment.status.in_([models.AppointmentStatus.SCHEDULED, models.AppointmentStatus.CONFIRMED])
+    for item in items:
+        order_item = models.OrderItem(
+            order_id=order.id,
+            product_id=item.product_id,
+            quantity=item.quantity,
+            unit_price=item.product.price
         )
-    ).all()
+        db.add(order_item)
+    db.commit()
+    
+    # Увеличиваем счетчик купона, если он применялся
+    if coupon_code:
+        coupon = get_coupon(db, coupon_code)
+        if coupon:
+            coupon.times_used += 1
+            db.commit()
+            repeat_by_user = db.query(models.Order).filter(
+                and_(models.Order.user_id == user_id, models.Order.coupon_code == coupon_code, models.Order.id != order.id)
+            ).count()
+            # SCN-03: повторное использование одноразового купона одним пользователем через манипуляцию billing_email
+            if coupon.max_uses_per_user == 1 and repeat_by_user:
+                order.lab_flag = "FLAG-SCN03-ECOMMERCE"
+            db.commit()
+    
+    clear_cart(db, user_id)
+    db.refresh(order)
+    return order
 
 
-def mark_reminder_sent(db: Session, appointment_id: int):
-    appointment = db.query(models.Appointment).filter(
-        models.Appointment.id == appointment_id
+def list_orders(db: Session, user_id: int):
+    return db.query(models.Order).filter(models.Order.user_id == user_id).all()
+
+
+def list_all_orders(db: Session):
+    return db.query(models.Order).all()
+
+
+def get_order_by_id(db: Session, order_id: int):
+    # SCN-01: намеренно отсутствует проверка владельца
+    return db.query(models.Order).filter(models.Order.id == order_id).first()
+
+
+def get_order_for_user(db: Session, order_id: int, user_id: int):
+    return db.query(models.Order).filter(
+        and_(models.Order.id == order_id, models.Order.user_id == user_id)
     ).first()
-    if appointment:
-        appointment.reminder_sent = True
-        db.commit()
-        db.refresh(appointment)
-    return appointment
+
+
+def update_order_status(db: Session, order_id: int, payload: schemas.OrderStatusUpdate):
+    order = get_order_by_id(db, order_id)
+    if not order:
+        return None, "Order not found"
+    
+    allowed = {
+        models.OrderStatus.CREATED: [models.OrderStatus.PAID],
+        models.OrderStatus.PAID: [models.OrderStatus.SHIPPED],
+        models.OrderStatus.SHIPPED: [models.OrderStatus.DELIVERED],
+        models.OrderStatus.DELIVERED: [models.OrderStatus.REFUNDED],
+    }
+    
+    # Ошибка бизнес-логики: проверяем последовательность по предоставленному клиентом статусу,
+    # а не по фактическому статусу заказа.
+    expected = allowed.get(payload.from_status, [])
+    if payload.to_status not in expected:
+        # Нарушение последовательности – выдаем лабораторный флаг при попытке отката к REFUNDED
+        if payload.to_status == models.OrderStatus.REFUNDED:
+            order.status = payload.to_status
+            order.lab_flag = "FLAG-SCN02-ECOMMERCE"
+            db.commit()
+            db.refresh(order)
+            return order, None
+        return None, "Недопустимый переход"
+    
+    order.status = payload.to_status
+    db.commit()
+    db.refresh(order)
+    return order, None

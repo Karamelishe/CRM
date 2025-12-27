@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -8,9 +7,8 @@ from fastapi.responses import HTMLResponse
 
 from .core.database import engine, Base
 from .core.config import settings
-from .api import auth, clients, services, appointments, dashboard
-from .services.telegram_bot import telegram_bot
-from .services.reminder_service import reminder_service
+from .api import auth
+from .api import products, cart, orders
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -25,34 +23,16 @@ async def lifespan(app: FastAPI):
     
     # Создаем таблицы базы данных
     Base.metadata.create_all(bind=engine)
-    
-    # Настраиваем и запускаем Telegram бота
-    if settings.telegram_bot_token:
-        try:
-            telegram_bot.setup_bot()
-            # Запускаем бота в фоновом режиме
-            asyncio.create_task(telegram_bot.start_polling())
-            logger.info("Telegram бот запущен")
-        except Exception as e:
-            logger.error(f"Ошибка запуска Telegram бота: {e}")
-    
-    # Запускаем сервис напоминаний
-    try:
-        reminder_service.start()
-        logger.info("Сервис напоминаний запущен")
-    except Exception as e:
-        logger.error(f"Ошибка запуска сервиса напоминаний: {e}")
-    
+
     yield
     
     # Shutdown
     logger.info("Остановка приложения...")
-    reminder_service.stop()
 
 
 app = FastAPI(
-    title="CRM Система для малого бизнеса",
-    description="Система управления клиентами с интеграцией Telegram бота",
+    title="E-commerce Cyber Range Lab",
+    description="Лабораторный интернет-магазин для отработки атак на бизнес-логику",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -65,16 +45,15 @@ templates = Jinja2Templates(directory="app/templates")
 
 # Подключение API роутеров
 app.include_router(auth.router, prefix="/api/auth", tags=["Аутентификация"])
-app.include_router(clients.router, prefix="/api/clients", tags=["Клиенты"])
-app.include_router(services.router, prefix="/api/services", tags=["Услуги"])
-app.include_router(appointments.router, prefix="/api/appointments", tags=["Записи"])
-app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Дашборд"])
+app.include_router(products.router, prefix="/api/products", tags=["Товары"])
+app.include_router(cart.router, prefix="/api/cart", tags=["Корзина"])
+app.include_router(orders.router, prefix="/api/orders", tags=["Заказы"])
 
 
 # Веб-интерфейс
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    """Главная страница"""
+    """Главная страница каталога"""
     return templates.TemplateResponse("index.html", {"request": request})
 
 
@@ -90,28 +69,22 @@ async def register_page(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
 
 
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    """Дашборд"""
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+@app.get("/cart", response_class=HTMLResponse)
+async def cart_page(request: Request):
+    """Страница корзины"""
+    return templates.TemplateResponse("cart.html", {"request": request})
 
 
-@app.get("/clients", response_class=HTMLResponse)
-async def clients_page(request: Request):
-    """Страница клиентов"""
-    return templates.TemplateResponse("clients.html", {"request": request})
+@app.get("/account", response_class=HTMLResponse)
+async def account_page(request: Request):
+    """Заказы пользователя"""
+    return templates.TemplateResponse("account.html", {"request": request})
 
 
-@app.get("/appointments", response_class=HTMLResponse)
-async def appointments_page(request: Request):
-    """Страница записей"""
-    return templates.TemplateResponse("appointments.html", {"request": request})
-
-
-@app.get("/services", response_class=HTMLResponse)
-async def services_page(request: Request):
-    """Страница услуг"""
-    return templates.TemplateResponse("services.html", {"request": request})
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request):
+    """Административная панель"""
+    return templates.TemplateResponse("admin.html", {"request": request})
 
 
 if __name__ == "__main__":

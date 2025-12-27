@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Корзина — E-Com Lab{% endblock %}
+{% block content %}
+<div class="hero">
+    <h2>Корзина</h2>
+    <p class="muted">Применяйте купоны, экспериментируйте с запросами и отслеживайте скидки.</p>
+</div>
+<div class="card">
+    <div class="card-content">
+        <div id="cartItems"></div>
+        <div class="mt">
+            <label class="muted">Billing email (участвует в логике купонов)</label>
+            <input id="billingEmail" placeholder="user@example.com">
+        </div>
+        <div class="mt">
+            <label class="muted">Купон</label>
+            <input id="couponCode" placeholder="LAB-COUPON">
+        </div>
+        <div id="cartSummary" class="mt"></div>
+    </div>
+</div>
+{% endblock %}
